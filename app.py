@@ -32,9 +32,9 @@ if not os.path.exists('/tmp/tfidf_model.pkl'):
 if not os.path.exists('/tmp/roberta_final'):
     snapshot_download(
         repo_id=HF_REPO,
-        local_dir="/tmp/roberta_final",
-        ignore_patterns=["*.md"]
-    )
+        repo_type="model",
+        local_dir="/tmp/roberta_final"
+)
 
 
 import os
@@ -53,9 +53,9 @@ if not os.path.exists('/tmp/tfidf_model.pkl'):
 if not os.path.exists('/tmp/roberta_final'):
     snapshot_download(
         repo_id=HF_REPO,
-        local_dir="/tmp/roberta_final",
-        ignore_patterns=["*.md"]
-    )
+        repo_type="model",
+        local_dir="/tmp/roberta_final"
+)
 
 
 import os
@@ -74,9 +74,9 @@ if not os.path.exists('/tmp/tfidf_model.pkl'):
 if not os.path.exists('/tmp/roberta_final'):
     snapshot_download(
         repo_id=HF_REPO,
-        local_dir="/tmp/roberta_final",
-        ignore_patterns=["*.md"]
-    )
+        repo_type="model",
+        local_dir="/tmp/roberta_final"
+)
 
 # ── Page Config ─────────────────────────────────────────────
 st.set_page_config(
@@ -430,8 +430,11 @@ def load_all_models():
         tfidf = pickle.load(f)
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    tok = RobertaTokenizer.from_pretrained('/tmp/roberta_final')
-    rob = RobertaForSequenceClassification.from_pretrained('/tmp/roberta_final')
+
+    tok = RobertaTokenizer.from_pretrained('/tmp/roberta_final/roberta_final')
+
+    rob = RobertaForSequenceClassification.from_pretrained('/tmp/roberta_final/roberta_final')
+
     rob.eval()
     rob.to(device)
     return tfidf, tok, rob, device
