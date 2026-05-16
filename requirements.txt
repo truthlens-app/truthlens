@@ -1,0 +1,14 @@
+streamlit
+plotly
+torch
+transformers
+vaderSentiment
+textblob
+newspaper3k
+beautifulsoup4
+requests
+numpy
+scikit-learn
+nltk
+lxml
+Pillow
