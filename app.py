@@ -19,6 +19,27 @@ from nltk.corpus import stopwords
 import os
 from huggingface_hub import hf_hub_download, snapshot_download
 
+HF_REPO = "YOUR_HF_USERNAME/truthlens-models"
+
+# Download models if not already present
+if not os.path.exists('/tmp/tfidf_model.pkl'):
+    hf_hub_download(
+        repo_id=HF_REPO,
+        filename="tfidf_model.pkl",
+        local_dir="/tmp"
+    )
+
+if not os.path.exists('/tmp/roberta_final'):
+    snapshot_download(
+        repo_id=HF_REPO,
+        local_dir="/tmp/roberta_final",
+        ignore_patterns=["*.md"]
+    )
+
+
+import os
+from huggingface_hub import hf_hub_download, snapshot_download
+
 HF_REPO = "Abhichakra/truthlens-models"
 
 # Download models if not already present
