@@ -1018,10 +1018,11 @@ def page_home():
                 label_visibility="collapsed"
             )
             if st.button(btn_label, key="analyze_text"):
-                if text_input and len(text_input.strip()) >= 50:
+                word_count = len(text_input.strip().split())
+                if text_input and word_count >= 100:
                     _run_analysis(text_input.strip(), input_type="text")
                 else:
-                    st.warning("Please paste at least 50 characters of article text.")
+                    st.warning("Please paste at least 100 words of article text.")
 
         with tab2:
             url_input = st.text_input(
