@@ -733,24 +733,67 @@ def predict_roberta(text):
 def scrape_article(url):
     result = {"url": url, "title": "", "text": "", "success": False, "error": ""}
     try:
-        from newspaper import Article
-        article = Article(url)
+        from newspaper import Article, Config
+        
+        # Configure a desktop browser user-agent to bypass anti-scraping blocks
+        config = Config()
+        config.browser_user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        config.request_timeout = 10
+        
+        # newspaper3k officially supports 'hi' and 'en' from our language set;
+        # for other unsupported Indian languages, default to 'en' so newspaper's
+        # DOM-based text extraction still runs successfully without throwing a ValueError.
+        lang = st.session_state.get("lang", "en")
+        newspaper_lang = lang if lang in ["en", "hi"] else "en"
+        
+        article = Article(url, language=newspaper_lang, config=config)
         article.download()
         article.parse()
+        
+        # If newspaper extracted less than 50 characters, fall back to BeautifulSoup
+        if not article.text or len(article.text.strip()) < 50:
+            raise ValueError("Extracted text too short")
+            
         result.update({"title": article.title, "text": article.text, "success": True})
     except Exception as e:
         try:
             from bs4 import BeautifulSoup
-            headers = {"User-Agent": "Mozilla/5.0"}
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+            }
             resp = requests.get(url, headers=headers, timeout=10)
+            resp.encoding = resp.apparent_encoding  # Crucial for decoding regional Indian languages correctly
+            
             soup = BeautifulSoup(resp.text, "html.parser")
+            
+            # Safe and robust title extraction
             title = soup.find("h1")
+            title_text = title.text.strip() if title else ""
+            if not title_text:
+                title_tag = soup.find("title")
+                if title_tag:
+                    title_text = title_tag.text.strip()
+            
+            # Robust paragraph extraction
             paragraphs = soup.find_all("p")
-            result.update({
-                "title": title.text.strip() if title else "Unknown",
-                "text": " ".join([p.text for p in paragraphs[:30]]),
-                "success": True
-            })
+            paragraphs_text = " ".join([p.text.strip() for p in paragraphs if len(p.text.strip()) > 10])
+            
+            # Fallback if no paragraphs are found
+            if not paragraphs_text or len(paragraphs_text.strip()) < 50:
+                body_text = soup.find("body")
+                if body_text:
+                    for script in body_text(["script", "style"]):
+                        script.decompose()
+                    paragraphs_text = body_text.get_text(separator=" ").strip()
+            
+            if len(paragraphs_text.strip()) >= 50:
+                result.update({
+                    "title": title_text if title_text else "Unknown",
+                    "text": paragraphs_text.strip(),
+                    "success": True
+                })
+            else:
+                result["error"] = "Insufficient content extracted from page."
         except Exception as e2:
             result["error"] = str(e2)
     return result
@@ -1018,11 +1061,19 @@ def page_home():
                 label_visibility="collapsed"
             )
             if st.button(btn_label, key="analyze_text"):
-                word_count = len(text_input.strip().split())
-                if text_input and word_count >= 100:
-                    _run_analysis(text_input.strip(), input_type="text")
+                stripped_text = text_input.strip()
+                if st.session_state.lang == "en":
+                    word_count = len(stripped_text.split())
+                    if stripped_text and word_count >= 100:
+                        _run_analysis(stripped_text, input_type="text")
+                    else:
+                        st.warning("Please paste at least 100 words of article text.")
                 else:
-                    st.warning("Please paste at least 100 words of article text.")
+                    char_count = len(stripped_text)
+                    if stripped_text and char_count >= 50:
+                        _run_analysis(stripped_text, input_type="text")
+                    else:
+                        st.warning("Please paste at least 50 characters of article text.")
 
         with tab2:
             url_input = st.text_input(
@@ -1034,10 +1085,22 @@ def page_home():
                 if url_input and url_input.startswith("http"):
                     with st.spinner("Fetching article…"):
                         scraped = scrape_article(url_input)
-                    if scraped["success"] and len(scraped["text"]) >= 50:
-                        full_text = scraped["title"] + " " + scraped["text"]
-                        _run_analysis(full_text.strip(), input_type="url",
-                                      scraped_meta=scraped)
+                    if scraped["success"]:
+                        text_to_check = scraped["text"].strip()
+                        if st.session_state.lang == "en":
+                            word_count = len(text_to_check.split())
+                            if word_count >= 100:
+                                full_text = scraped["title"] + " " + scraped["text"]
+                                _run_analysis(full_text.strip(), input_type="url", scraped_meta=scraped)
+                            else:
+                                st.error("Extracted article must be at least 100 words.")
+                        else:
+                            char_count = len(text_to_check)
+                            if char_count >= 50:
+                                full_text = scraped["title"] + " " + scraped["text"]
+                                _run_analysis(full_text.strip(), input_type="url", scraped_meta=scraped)
+                            else:
+                                st.error("Extracted article must be at least 50 characters.")
                     else:
                         st.error(f"Could not extract article text. {scraped.get('error','')}")
                 else:
@@ -1051,14 +1114,38 @@ def page_home():
     st.markdown('<div class="section-header" style="margin-top:3rem; text-align:center;"><span>How It Works</span></div>', unsafe_allow_html=True)
     render_how_grid()
 
+def translate_to_english(text):
+    try:
+        import requests
+        url = "https://translate.googleapis.com/translate_a/single"
+        params = {
+            "client": "gtx",
+            "sl": "auto",
+            "tl": "en",
+            "dt": "t",
+            "q": text
+        }
+        resp = requests.get(url, params=params, timeout=10)
+        if resp.status_code == 200:
+            data = resp.json()
+            # Combine all translated segments together
+            translated_text = "".join([segment[0] for segment in data[0] if segment[0]])
+            return translated_text
+    except Exception:
+        pass
+    return text
+
 def _run_analysis(text, input_type="text", scraped_meta=None):
     if not st.session_state.logged_in:
         st.session_state.guest_attempts += 1
 
     with st.spinner("🧠 Analyzing…"):
-        features = analyze_linguistic_features(text)
-        tfidf_fake, tfidf_real = predict_tfidf(text)
-        roberta_fake, roberta_real = predict_roberta(text)
+        # Auto-translate regional language text to English for high-accuracy analysis with English-trained models
+        analysis_text = translate_to_english(text)
+        
+        features = analyze_linguistic_features(analysis_text)
+        tfidf_fake, tfidf_real = predict_tfidf(analysis_text)
+        roberta_fake, roberta_real = predict_roberta(analysis_text)
 
         # Ensemble: TF-IDF primary, RoBERTa small boost
         boost = 0.0
